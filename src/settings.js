@@ -74,14 +74,14 @@ export function registerSettings() {
 		default: true,
 	});
 
-	game.settings.register(settingsKey, "showGMRulerToPlayers", {
-		name: "drag-ruler-modern.settings.showGMRulerToPlayers.name",
-		hint: "drag-ruler-modern.settings.showGMRulerToPlayers.hint",
-		scope: "world",
-		config: true,
-		type: Boolean,
-		default: true,
-	});
+	// game.settings.register(settingsKey, "showGMRulerToPlayers", {
+	// 	name: "drag-ruler-modern.settings.showGMRulerToPlayers.name",
+	// 	hint: "drag-ruler-modern.settings.showGMRulerToPlayers.hint",
+	// 	scope: "world",
+	// 	config: true,
+	// 	type: Boolean,
+	// 	default: true,
+	// });
 
 	game.settings.register(settingsKey, "enableMovementHistory", {
 		name: "drag-ruler-modern.settings.enableMovementHistory.name",
