@@ -7,7 +7,7 @@ function initTrackingFlag(combatant) {
 	let dragRulerFlag = combatant.flags.dragRuler;
 	if (dragRulerFlag) {
 		if (isNaN(dragRulerFlag.trackedRound)) {
-			mergeObject(dragRulerFlag, initialFlag);
+			foundry.utils.mergeObject(dragRulerFlag, initialFlag);
 		}
 	} else {
 		combatant.flags.dragRuler = initialFlag;
@@ -69,7 +69,7 @@ function calculateUpdate(combat, token, rays) {
 export function getMovementHistory(token) {
 	const combat = game.combat;
 	if (!combat) return [];
-	const combatant = combat.getCombatantByToken(token.id);
+	const combatant = combat.getCombatantsByToken(token.id);
 	if (!combatant) return [];
 	const dragRulerFlags = combatant.flags.dragRuler;
 	if (!dragRulerFlags) return [];
