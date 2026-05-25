@@ -27,6 +27,10 @@ Hooks.once("init", () => {
 	registerSettings();
 	registerKeybindings();
 	initApi();
+	
+	// Register Handlebars helpers for settings UI
+	Handlebars.registerHelper('eq', (a, b) => a === b);
+	
 	// Don't hook drag handlers - let Foundry handle waypoints natively
 	// hookDragHandlers(Token);
 	// hookDragHandlers(MeasuredTemplate);

@@ -185,17 +185,34 @@ export function registerSettings() {
 	});
 }
 
-class SpeedProviderSettings extends FormApplication {
-	static get defaultOptions() {
-		return foundry.utils.mergeObject(super.defaultOptions, {
-			id: "drag-ruler-speed-provider-settings",
-			title: game.i18n.localize("drag-ruler-modern.settings.speedProviderSettings.windowTitle"),
-			template: "modules/drag-ruler-modern/templates/speed_provider_settings.html",
+class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+	static DEFAULT_OPTIONS = {
+		id: "drag-ruler-speed-provider-settings",
+		tag: "form",
+		form: {
+			handler: SpeedProviderSettings._onSubmit,
+			submitOnChange: false,
+			closeOnSubmit: false,
+		},
+		window: {
+			title: "drag-ruler-modern.settings.speedProviderSettings.windowTitle",
+			contentClasses: ["standard-form"],
+		},
+		position: {
 			width: 600,
-		});
-	}
+		},
+		actions: {
+			save: SpeedProviderSettings._onSave,
+		},
+	};
 
-	getData(options = {}) {
+	static PARTS = {
+		form: {
+			template: "modules/drag-ruler-modern/templates/speed_provider_settings.html",
+		},
+	};
+
+	async _prepareContext(options = {}) {
 		const data = {};
 		data.isGM = game.user.isGM;
 		const selectedProvider = currentSpeedProvider.id;
@@ -257,7 +274,17 @@ class SpeedProviderSettings extends FormApplication {
 		return data;
 	}
 
-	async _updateObject(event, formData) {
+	static async _onSubmit(event, form, formData) {
+		// Form submission is handled by save action button
+	}
+
+	static async _onSave(event, target) {
+		event.preventDefault();
+		
+		// Get the form element and extract form data
+		const form = this.element.querySelector("form");
+		const formData = new FormDataExtended(form).object;
+		
 		const selectedSpeedProvider = game.user.isGM
 			? formData.speedProvider
 			: game.settings.get(settingsKey, "speedProvider");
@@ -308,10 +335,13 @@ class SpeedProviderSettings extends FormApplication {
 		
 		// Trigger recalculation of active rulers to apply new settings immediately
 		// Call recalculation directly (not through sockets) since we're updating locally
-		this._recalculateActiveRulers();
+		SpeedProviderSettings._recalculateActiveRulers();
+		
+		// Close the dialog
+		this.close();
 	}
 	
-	_recalculateActiveRulers() {
+	static _recalculateActiveRulers() {
 		// Clear cached ranges and force re-measure for any active rulers
 		// Check canvas.controls.ruler (main ruler)
 		const ruler = canvas?.controls?.ruler;
@@ -329,22 +359,22 @@ class SpeedProviderSettings extends FormApplication {
 		}
 	}
 
-	activateListeners(html) {
-		super.activateListeners(html);
-		html.find("select[name=speedProvider]").change(this.onSpeedProviderChange.bind(this));
+	_onRender(context, options) {
+		const html = this.element;
+		html.querySelector("select[name=speedProvider]")?.addEventListener("change", this._onSpeedProviderChange.bind(this));
 	}
 
-	onSpeedProviderChange(event) {
+	_onSpeedProviderChange(event) {
 		// Hide all module settings
-		document
+		this.element
 			.querySelectorAll(".drag-ruler-provider-settings")
 			.forEach(element => (element.style.display = "none"));
 		// Show the settings block for the currently selected module
-		document.getElementById(`drag-ruler-modern.provider.${event.currentTarget.value}`).style.display = "";
+		const selectedElement = this.element.querySelector(`#drag-ruler-modern\\.provider\\.${event.currentTarget.value}`);
+		if (selectedElement) selectedElement.style.display = "";
 
 		// Recalculate window height
-		this.element[0].style.height = null;
-		this.position.height = undefined;
+		this.setPosition({height: "auto"});
 	}
 }
 
@@ -362,6 +392,7 @@ function enumerateProviderSettings(provider) {
 
 	// Resolve settings for the colors
 	for (const color of provider.colors.concat([unreachableColor])) {
+		if (!color) continue; // Skip undefined/null colors
 		// Localize the name, if avaliable. If no name is available use the id as name
 		const colorName = color.name ? game.i18n.localize(color.name) : color.id;
 		let hint;
@@ -387,9 +418,10 @@ function enumerateProviderSettings(provider) {
 	// Prepare regular settings
 	const settings = [];
 	for (const setting of provider.settings) {
+		if (!setting) continue; // Skip undefined/null settings
 		try {
 			if (setting.scope === "world" && !game.user.isGM) continue;
-			const s = duplicate(setting);
+			const s = foundry.utils.duplicate(setting);
 			s.id = `${provider.id}.setting.${s.id}`;
 			s.name = game.i18n.localize(s.name);
 			s.hint = game.i18n.localize(s.hint);

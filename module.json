@@ -19,6 +19,9 @@
 		"src/main.js",
 		"src/socket.js"
 	],
+	"styles": [
+		"styles/drag-ruler-modern.css"
+	],
 	"languages": [
 		{
 			"lang": "en",
