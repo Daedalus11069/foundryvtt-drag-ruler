@@ -283,7 +283,7 @@ class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicati
 		
 		// Get the form element and extract form data
 		const form = this.element.querySelector("form");
-		const formData = new FormDataExtended(form).object;
+		const formData = new foundry.applications.ux.FormDataExtended(form).object;
 		
 		const selectedSpeedProvider = game.user.isGM
 			? formData.speedProvider
