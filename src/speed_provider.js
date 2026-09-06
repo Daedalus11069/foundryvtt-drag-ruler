@@ -1,4 +1,4 @@
-import {settingsKey} from "./settings.js";
+import {ensureTierColorSetting, recalculateActiveRulers, settingsKey} from "./settings.js";
 import {getDefaultDashMultiplier, getDefaultSpeedAttribute} from "./systems.js";
 
 /**
@@ -104,12 +104,100 @@ export class SpeedProvider {
 	}
 }
 
+// User-defined speed tiers beyond walk/dash, stored as a plain array of
+// {id, label, multiplier} objects in the "genericSpeedProviderTiers" world setting.
+// The GM can add or remove as many of these as they like from the Speed Provider Settings dialog;
+// each tier's color is then configured through the regular per-color setting like walk/dash.
+export function getExtraSpeedTiers() {
+	try {
+		return game.settings.get(settingsKey, "genericSpeedProviderTiers") ?? [];
+	} catch (e) {
+		return [];
+	}
+}
+
+// Rotating default colors handed to newly added tiers before the GM picks their own.
+export const EXTRA_TIER_DEFAULT_COLORS = [0xffa500, 0xff8c00, 0xff1493, 0x8a2be2, 0x1e90ff, 0x00ced1];
+
+/**
+ * Adds a new speed tier to the built-in Generic Speed Provider. World-scoped; requires GM.
+ *
+ * @param {object} options
+ * @param {string} [options.label] - A user readable name for the tier, shown in the settings dialog.
+ * @param {number} options.multiplier - The tier's range is the token's speed multiplied by this value.
+ * @param {number} [options.color] - The tier's initial color (e.g. 0xff8800). Defaults to a rotating palette entry.
+ * @returns {Promise<string>} The id of the newly created tier, e.g. for later use with updateSpeedTier/removeSpeedTier.
+ */
+export async function addSpeedTier({label = "", multiplier, color} = {}) {
+	if (!game.user.isGM) throw new Error("Drag Ruler Modern | Only a GM can add speed tiers");
+	if (!(multiplier > 0)) throw new Error("Drag Ruler Modern | addSpeedTier requires a positive multiplier");
+
+	const tiers = getExtraSpeedTiers();
+	const id = `tier-${foundry.utils.randomID()}`;
+	const resolvedColor = color ?? EXTRA_TIER_DEFAULT_COLORS[tiers.length % EXTRA_TIER_DEFAULT_COLORS.length];
+	ensureTierColorSetting(id, resolvedColor);
+	await game.settings.set(settingsKey, "genericSpeedProviderTiers", [...tiers, {id, label, multiplier}]);
+	if (color !== undefined) await game.settings.set(settingsKey, `speedProviders.native.color.${id}`, color);
+	recalculateActiveRulers();
+	return id;
+}
+
+/**
+ * Updates an existing speed tier's label, multiplier and/or color. Only the provided fields are changed.
+ * Label/multiplier changes are world-scoped (require GM); color changes are per-client and can be made by anyone.
+ *
+ * @param {string} id - The id returned by addSpeedTier (or found via getExtraSpeedTiers).
+ * @param {object} changes
+ * @param {string} [changes.label]
+ * @param {number} [changes.multiplier]
+ * @param {number} [changes.color]
+ */
+export async function updateSpeedTier(id, {label, multiplier, color} = {}) {
+	if (label !== undefined || multiplier !== undefined) {
+		if (!game.user.isGM) throw new Error("Drag Ruler Modern | Only a GM can rename/retune speed tiers");
+		const tiers = getExtraSpeedTiers();
+		const tier = tiers.find(t => t.id === id);
+		if (!tier) throw new Error(`Drag Ruler Modern | No speed tier with id "${id}" exists`);
+		if (label !== undefined) tier.label = label;
+		if (multiplier !== undefined) {
+			if (!(multiplier > 0)) throw new Error("Drag Ruler Modern | multiplier must be a positive number");
+			tier.multiplier = multiplier;
+		}
+		await game.settings.set(settingsKey, "genericSpeedProviderTiers", tiers);
+	}
+	if (color !== undefined) {
+		ensureTierColorSetting(id, color);
+		await game.settings.set(settingsKey, `speedProviders.native.color.${id}`, color);
+	}
+	recalculateActiveRulers();
+}
+
+/**
+ * Removes a speed tier previously added with addSpeedTier. World-scoped; requires GM.
+ *
+ * @param {string} id - The id of the tier to remove.
+ */
+export async function removeSpeedTier(id) {
+	if (!game.user.isGM) throw new Error("Drag Ruler Modern | Only a GM can remove speed tiers");
+	const tiers = getExtraSpeedTiers().filter(tier => tier.id !== id);
+	await game.settings.set(settingsKey, "genericSpeedProviderTiers", tiers);
+	recalculateActiveRulers();
+}
+
 export class GenericSpeedProvider extends SpeedProvider {
 	get colors() {
-		return [
+		const colors = [
 			{id: "walk", default: 0x00ff00, name: "drag-ruler-modern.genericSpeedProvider.speeds.walk"},
 			{id: "dash", default: 0xffff00, name: "drag-ruler-modern.genericSpeedProvider.speeds.dash"},
 		];
+		getExtraSpeedTiers().forEach((tier, index) => {
+			colors.push({
+				id: tier.id,
+				default: EXTRA_TIER_DEFAULT_COLORS[index % EXTRA_TIER_DEFAULT_COLORS.length],
+				name: tier.label || tier.id,
+			});
+		});
+		return colors;
 	}
 
 	getRanges(token) {
@@ -141,16 +229,23 @@ export class GenericSpeedProvider extends SpeedProvider {
 			}
 		}
 		
+		const ranges = [{range: tokenSpeed, color: "walk"}];
+
 		const dashMultiplier = this.getSetting("dashMultiplier");
-		if (!dashMultiplier) return [{range: tokenSpeed, color: "walk"}];
-		return [
-			{range: tokenSpeed, color: "walk"},
-			{range: tokenSpeed * dashMultiplier, color: "dash"},
-		];
+		if (dashMultiplier) ranges.push({range: tokenSpeed * dashMultiplier, color: "dash"});
+
+		for (const tier of getExtraSpeedTiers()) {
+			if (!tier.multiplier) continue;
+			ranges.push({range: tokenSpeed * tier.multiplier, color: tier.id});
+		}
+
+		// Ranges must be sorted ascending so getColorForDistanceAndToken can find the smallest matching tier.
+		ranges.sort((a, b) => a.range - b.range);
+		return ranges;
 	}
 
 	get settings() {
-		return [
+		const settings = [
 			{
 				id: "speedAttribute",
 				name: "drag-ruler-modern.genericSpeedProvider.settings.speedAttribute.name",
@@ -170,5 +265,6 @@ export class GenericSpeedProvider extends SpeedProvider {
 				default: getDefaultDashMultiplier(),
 			},
 		];
+		return settings;
 	}
 }

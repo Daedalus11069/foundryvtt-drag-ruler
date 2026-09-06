@@ -125,6 +125,19 @@
 					"type": "Movement Type",
 					"enabled": "Enabled",
 					"attribute": "Attribute Path"
+				},
+				"tiers": {
+					"header": "Additional Speed Tiers",
+					"hint": "Add extra speed tiers (e.g. Run x3, Run x4) beyond Walk and Dash. Each tier's range is the token's speed multiplied by the value entered here. Use the arrows to reorder tiers.",
+					"label": "Label",
+					"multiplier": "Multiplier",
+					"color": "Color",
+					"add": "Add Tier",
+					"remove": "Remove tier",
+					"moveUp": "Move up",
+					"moveDown": "Move down",
+					"confirmDeleteTitle": "Remove Speed Tier",
+					"confirmDeleteContent": "Are you sure you want to remove the speed tier \"{label}\"? This cannot be undone."
 				}
 			},
 			"useGridlessRaster": {

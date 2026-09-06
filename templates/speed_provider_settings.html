@@ -51,6 +51,36 @@
 					{{else}}
 						<p>{{localize "drag-ruler-modern.settings.speedProviderSettings.noSettings"}}</p>
 					{{/if}}
+					{{#if this.isNative}}
+						<h3>{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.header"}}</h3>
+						<p class="notes">{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.hint"}}</p>
+						<table class="drag-ruler-tier-table" style="width: 100%; margin-bottom: 0.5em;">
+							<thead>
+								<tr>
+									<th>{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.label"}}</th>
+									<th>{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.multiplier"}}</th>
+									<th>{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.color"}}</th>
+									<th></th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								{{#each this.extraTiers}}
+								<tr data-tier-id="{{this.id}}">
+									<td><input type="text" class="drag-ruler-tier-label" value="{{this.label}}" placeholder="e.g. Run x3" style="width: 100%;" /></td>
+									<td><input type="number" class="drag-ruler-tier-multiplier" value="{{this.multiplier}}" step="0.1" min="0" style="width: 100%;" /></td>
+									<td><input type="color" name="{{this.colorSettingId}}" value="{{this.colorHex}}" /></td>
+									<td style="white-space: nowrap; text-align: center;">
+										<button type="button" class="drag-ruler-tier-up" title="{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.moveUp"}}"><i class="fas fa-arrow-up"></i></button>
+										<button type="button" class="drag-ruler-tier-down" title="{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.moveDown"}}"><i class="fas fa-arrow-down"></i></button>
+									</td>
+									<td style="text-align: center;"><button type="button" class="drag-ruler-remove-tier" title="{{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.remove"}}"><i class="fas fa-trash"></i></button></td>
+								</tr>
+								{{/each}}
+							</tbody>
+						</table>
+						<button type="button" class="drag-ruler-add-tier"><i class="fas fa-plus"></i> {{localize "drag-ruler-modern.settings.speedProviderSettings.tiers.add"}}</button>
+					{{/if}}
 				</div>
 			{{/each}}
 			

@@ -17,7 +17,13 @@ import {removeLastHistoryEntryIfAt, resetMovementHistory} from "./movement_track
 import {extendRuler} from "./ruler.js";
 import {registerSettings, RightClickAction, settingsKey} from "./settings.js";
 import {recalculate} from "./socket.js";
-import {SpeedProvider} from "./speed_provider.js";
+import {
+	addSpeedTier,
+	getExtraSpeedTiers,
+	removeSpeedTier,
+	SpeedProvider,
+	updateSpeedTier,
+} from "./speed_provider.js";
 import {getEntityCenter, setSnapParameterOnOptions} from "./util.js";
 
 CONFIG.debug.dragRuler = false;
@@ -66,6 +72,10 @@ Hooks.once("init", () => {
 		registerSystem,
 		recalculate,
 		resetMovementHistory,
+		addSpeedTier,
+		updateSpeedTier,
+		removeSpeedTier,
+		getExtraSpeedTiers,
 	};
 	// Also expose as dragRulerModern for new integrations
 	window.dragRulerModern = window.dragRuler;

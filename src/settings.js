@@ -4,7 +4,7 @@ import {
 	getDefaultSpeedProvider,
 	updateSpeedProvider,
 } from "./api.js";
-import {SpeedProvider} from "./speed_provider.js";
+import {EXTRA_TIER_DEFAULT_COLORS, SpeedProvider} from "./speed_provider.js";
 import {early_isGM} from "./util.js";
 
 export const settingsKey = "drag-ruler-modern";
@@ -166,6 +166,16 @@ export function registerSettings() {
 		},
 	});
 
+	// User-defined additional speed tiers for the built-in Generic Speed Provider.
+	// Array of {id, label, multiplier, color}. The GM can add/remove entries freely
+	// from the Speed Provider Settings dialog.
+	game.settings.register(settingsKey, "genericSpeedProviderTiers", {
+		scope: "world",
+		config: false,
+		type: Array,
+		default: [],
+	});
+
 	// This setting will be modified by the api if modules register to it
 	game.settings.register(settingsKey, "speedProvider", {
 		scope: "world",
@@ -223,6 +233,23 @@ class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicati
 			provider.id = speedProvider.id;
 			provider.hasSettings = speedProvider instanceof SpeedProvider;
 			if (provider.hasSettings) provider.settings = enumerateProviderSettings(speedProvider);
+			provider.isNative = provider.id === "native";
+			if (provider.isNative) {
+				const tiers = game.settings.get(settingsKey, "genericSpeedProviderTiers");
+				provider.extraTiers = tiers.map((tier, index) => ({
+					id: tier.id,
+					label: tier.label,
+					multiplier: tier.multiplier,
+					colorSettingId: `native.color.${tier.id}`,
+					colorHex: toDomHex(
+						ensureTierColorSetting(tier.id, EXTRA_TIER_DEFAULT_COLORS[index % EXTRA_TIER_DEFAULT_COLORS.length]),
+					),
+				}));
+				// Each extra tier's color is already shown inline in the tier row above;
+				// don't also show it in the generic flat settings list below.
+				const tierColorIds = new Set(tiers.map(tier => `${provider.id}.color.${tier.id}`));
+				provider.settings = provider.settings.filter(setting => !tierColorIds.has(setting.id));
+			}
 			let dotPosition = provider.id.indexOf(".");
 			if (dotPosition === -1) dotPosition = provider.id.length;
 			const type = provider.id.substring(0, dotPosition);
@@ -280,11 +307,25 @@ class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicati
 
 	static async _onSave(event, target) {
 		event.preventDefault();
-		
+
 		// Get the form element and extract form data
 		const form = this.element.querySelector("form");
 		const formData = new foundry.applications.ux.FormDataExtended(form).object;
-		
+
+		// Gather the dynamic speed tier rows (label/multiplier inputs have no `name` attribute
+		// so FormDataExtended never sees them; read them directly from the DOM instead).
+		// Row order is preserved so the GM's manual reordering sticks.
+		if (game.user.isGM) {
+			const tiers = [];
+			for (const row of form.querySelectorAll(".drag-ruler-tier-table tbody tr")) {
+				const label = row.querySelector(".drag-ruler-tier-label")?.value?.trim() ?? "";
+				const multiplier = parseFloat(row.querySelector(".drag-ruler-tier-multiplier")?.value) || 0;
+				if (!label && !multiplier) continue;
+				tiers.push({id: row.dataset.tierId, label, multiplier});
+			}
+			await game.settings.set(settingsKey, "genericSpeedProviderTiers", tiers);
+		}
+
 		const selectedSpeedProvider = game.user.isGM
 			? formData.speedProvider
 			: game.settings.get(settingsKey, "speedProvider");
@@ -335,33 +376,84 @@ class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicati
 		
 		// Trigger recalculation of active rulers to apply new settings immediately
 		// Call recalculation directly (not through sockets) since we're updating locally
-		SpeedProviderSettings._recalculateActiveRulers();
-		
+		recalculateActiveRulers();
+
 		// Close the dialog
 		this.close();
-	}
-	
-	static _recalculateActiveRulers() {
-		// Clear cached ranges and force re-measure for any active rulers
-		// Check canvas.controls.ruler (main ruler)
-		const ruler = canvas?.controls?.ruler;
-		if (ruler?.waypoints?.length > 0 && ruler.dragRulerRecalculate) {
-			ruler.dragRulerRecalculate();
-		}
-		
-		// Also check all token rulers (v13+)
-		if (canvas?.tokens?.placeables) {
-			for (const token of canvas.tokens.placeables) {
-				if (token.ruler?.waypoints?.length > 0 && token.ruler.dragRulerRecalculate) {
-					token.ruler.dragRulerRecalculate();
-				}
-			}
-		}
 	}
 
 	_onRender(context, options) {
 		const html = this.element;
 		html.querySelector("select[name=speedProvider]")?.addEventListener("change", this._onSpeedProviderChange.bind(this));
+
+		const tierBody = html.querySelector(".drag-ruler-tier-table tbody");
+
+		html.querySelector(".drag-ruler-add-tier")?.addEventListener("click", () => {
+			if (!tierBody) return;
+			const id = `tier-${foundry.utils.randomID()}`;
+			const index = tierBody.querySelectorAll("tr").length;
+			const defaultColor = ensureTierColorSetting(
+				id,
+				EXTRA_TIER_DEFAULT_COLORS[index % EXTRA_TIER_DEFAULT_COLORS.length],
+			);
+			const row = document.createElement("tr");
+			row.dataset.tierId = id;
+			row.innerHTML = SpeedProviderSettings._tierRowCellsHTML({
+				label: "",
+				multiplier: 1,
+				colorSettingId: `native.color.${id}`,
+				colorHex: toDomHex(defaultColor),
+			});
+			tierBody.appendChild(row);
+			this.setPosition({height: "auto"});
+		});
+
+		tierBody?.addEventListener("click", async event => {
+			const row = event.target.closest("tr");
+			if (!row) return;
+
+			if (event.target.closest(".drag-ruler-tier-up")) {
+				const prev = row.previousElementSibling;
+				if (prev) tierBody.insertBefore(row, prev);
+				return;
+			}
+
+			if (event.target.closest(".drag-ruler-tier-down")) {
+				const next = row.nextElementSibling;
+				if (next) tierBody.insertBefore(next, row);
+				return;
+			}
+
+			if (event.target.closest(".drag-ruler-remove-tier")) {
+				const label = row.querySelector(".drag-ruler-tier-label")?.value?.trim() || row.dataset.tierId;
+				const confirmed = await foundry.applications.api.DialogV2.confirm({
+					window: {
+						title: game.i18n.localize("drag-ruler-modern.settings.speedProviderSettings.tiers.confirmDeleteTitle"),
+					},
+					content: `<p>${game.i18n.format(
+						"drag-ruler-modern.settings.speedProviderSettings.tiers.confirmDeleteContent",
+						{label},
+					)}</p>`,
+				});
+				if (confirmed) {
+					row.remove();
+					this.setPosition({height: "auto"});
+				}
+			}
+		});
+	}
+
+	static _tierRowCellsHTML({label, multiplier, colorSettingId, colorHex}) {
+		return `
+			<td><input type="text" class="drag-ruler-tier-label" value="${label}" placeholder="e.g. Run x3" style="width: 100%;" /></td>
+			<td><input type="number" class="drag-ruler-tier-multiplier" value="${multiplier}" step="0.1" min="0" style="width: 100%;" /></td>
+			<td><input type="color" name="${colorSettingId}" value="${colorHex}" /></td>
+			<td style="white-space: nowrap; text-align: center;">
+				<button type="button" class="drag-ruler-tier-up" title="${game.i18n.localize("drag-ruler-modern.settings.speedProviderSettings.tiers.moveUp")}"><i class="fas fa-arrow-up"></i></button>
+				<button type="button" class="drag-ruler-tier-down" title="${game.i18n.localize("drag-ruler-modern.settings.speedProviderSettings.tiers.moveDown")}"><i class="fas fa-arrow-down"></i></button>
+			</td>
+			<td style="text-align: center;"><button type="button" class="drag-ruler-remove-tier" title="${game.i18n.localize("drag-ruler-modern.settings.speedProviderSettings.tiers.remove")}"><i class="fas fa-trash"></i></button></td>
+		`;
 	}
 
 	_onSpeedProviderChange(event) {
@@ -376,6 +468,39 @@ class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicati
 		// Recalculate window height
 		this.setPosition({height: "auto"});
 	}
+}
+
+// Clears cached ranges and forces active rulers to re-measure, so that settings changes
+// (made through the dialog or through the API) are reflected immediately.
+export function recalculateActiveRulers() {
+	const ruler = canvas?.controls?.ruler;
+	if (ruler?.waypoints?.length > 0 && ruler.dragRulerRecalculate) {
+		ruler.dragRulerRecalculate();
+	}
+
+	if (canvas?.tokens?.placeables) {
+		for (const token of canvas.tokens.placeables) {
+			if (token.ruler?.waypoints?.length > 0 && token.ruler.dragRulerRecalculate) {
+				token.ruler.dragRulerRecalculate();
+			}
+		}
+	}
+}
+
+// Registers (if not already registered) the per-client color setting for one extra speed tier
+// and returns its current value. Registering lazily like this lets a newly added tier get a
+// working color picker immediately, without waiting for a page reload.
+export function ensureTierColorSetting(tierId, defaultColor) {
+	const key = `speedProviders.native.color.${tierId}`;
+	if (!game.settings.settings.has(`${settingsKey}.${key}`)) {
+		game.settings.register(settingsKey, key, {
+			config: false,
+			scope: "client",
+			type: Number,
+			default: defaultColor,
+		});
+	}
+	return game.settings.get(settingsKey, key);
 }
 
 function toDomHex(value) {
