@@ -159,7 +159,7 @@ export function registerSettings() {
 				enabled: false,
 				attribute: "",
 			},
-			teleport: {
+			blink: {
 				enabled: false,
 				attribute: "",
 			},
@@ -332,7 +332,7 @@ class SpeedProviderSettings extends foundry.applications.api.HandlebarsApplicati
 		
 		// Handle movement types separately
 		const movementTypes = {};
-		const movementKeys = ["walk", "fly", "burrow", "swim", "climb", "crawl", "jump", "teleport"];
+		const movementKeys = ["walk", "fly", "burrow", "swim", "climb", "crawl", "jump", "blink"];
 		for (const key of movementKeys) {
 			if (`${key}.enabled` in formData || `${key}.attribute` in formData) {
 				movementTypes[key] = {

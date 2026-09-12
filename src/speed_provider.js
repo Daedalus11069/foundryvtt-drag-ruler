@@ -204,14 +204,25 @@ export class GenericSpeedProvider extends SpeedProvider {
 		// Check movement types first
 		const movementTypes = game.settings.get(settingsKey, "movementTypes");
 		let tokenSpeed = null;
-		
-		// Try to find an enabled movement type with a configured attribute
-		for (const [key, config] of Object.entries(movementTypes)) {
-			if (config.enabled && config.attribute) {
-				const speed = parseFloat(foundry.utils.getProperty(token, config.attribute));
-				if (speed !== undefined && !isNaN(speed)) {
-					tokenSpeed = speed;
-					break;
+
+		// Prefer the token's currently active movement action (walk, fly, swim, burrow,
+		// crawl, climb, jump, blink), if that movement type is enabled and configured.
+		const activeMovementAction = token.document?.movementAction;
+		const activeConfig = activeMovementAction && movementTypes[activeMovementAction];
+		if (activeConfig?.enabled && activeConfig.attribute) {
+			const speed = parseFloat(foundry.utils.getProperty(token, activeConfig.attribute));
+			if (!isNaN(speed)) tokenSpeed = speed;
+		}
+
+		// Otherwise fall back to the first enabled movement type with a configured attribute
+		if (tokenSpeed === null) {
+			for (const [key, config] of Object.entries(movementTypes)) {
+				if (config.enabled && config.attribute) {
+					const speed = parseFloat(foundry.utils.getProperty(token, config.attribute));
+					if (speed !== undefined && !isNaN(speed)) {
+						tokenSpeed = speed;
+						break;
+					}
 				}
 			}
 		}
